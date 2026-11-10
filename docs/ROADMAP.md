@@ -1,120 +1,158 @@
-# Implementation Roadmap
+# Implementation Roadmap — Directional Trading
 
 ## Guiding rule
 
-Build and validate one vertical slice at a time. The objective is repeatable net edge after realistic costs, not maximizing indicators or trade count. No milestone automatically authorizes live trading.
+Build one measurable vertical slice at a time. Optimize for repeatable net, out-of-sample, risk-adjusted expectancy, not trade count, win rate, model complexity, or gross backtest return. No milestone authorizes live trading. Directional long/short only; arbitrage, MEV, sandwiching, and cross-DEX execution remain explicitly out of scope.
 
-## Milestone 0 — Requirements and baseline
+## Fixed operating constraints
+
+- Intended holding period: 1–120 minutes; no overnight exposure.
+- Initial venue foundation: Coinbase public market data; add Kraken after Coinbase data/replay is stable.
+- Research and paper trading first. Live order entry remains unavailable until separately designed, tested, and explicitly approved.
+- All results include fees, bid/ask spread, slippage, latency, partial/missed fills, and funding where the instrument requires it.
+- Use the same versioned feature and signal contracts in research, backtest, and paper modes.
+- ML may propose or rank signals; deterministic risk code has final authority to approve or reject every order.
+
+## Milestone 0 — Baseline, contracts, and reproducibility
+
 **Deliverables**
-- Confirm exchanges, spot/perpetual markets, symbols, capital assumptions, data budget, and operational environment.
-- Define the 1–2 hour target and no-overnight rule precisely.
-- Predefine benchmark strategies and evaluation metrics.
-- Establish coding standards, dependency management, configuration, and secret handling.
+- Preserve the current Coinbase adapter, ticker-sampled EMA prototype, paper broker, feed-health checks, and CI as the baseline.
+- Freeze a baseline commit and record current behavior before changing strategy logic.
+- Define canonical instrument, trade, quote, candle, feature, signal, risk-decision, order-intent, fill, position, and PnL schemas.
+- Define event-time and receive-time semantics, UTC timestamps, data provenance, strategy/model/config versions, and deterministic replay IDs.
+- Pin Python dependencies and record reproducible environment instructions.
+- Keep secrets out of Git; public market-data mode must continue to work without credentials.
 
-**Exit gate:** Written venue/instrument/universe/timeframe/cost decisions; no secrets committed.
+**Exit gate:** baseline tests pass; a captured feed can be replayed deterministically; all signal and risk decisions are auditable.
 
-## Milestone 1 — Market-data foundation
+## Milestone 1 — Reliable multi-resolution market data
+
 **Deliverables**
-- Implement one exchange adapter end to end.
-- Ingest instrument metadata, trades, best bid/ask, and candles.
-- Normalize symbols, quantities, timestamps, and event schemas.
-- Persist historical data to Parquet and query with DuckDB.
-- Add reconnect, heartbeat, gap detection, REST backfill, and stale-feed blocking.
+- Upgrade from irregular ticker-sampled indicators to exchange-time OHLCV bars; retain raw trades/quotes where useful.
+- Build 1m and 5m execution/entry bars, 15m setup bars, and 1h/4h context bars from causally aligned data.
+- Add historical REST backfill, Parquet storage, DuckDB research queries, gap detection, duplicate/out-of-order handling, and candle finalization rules.
+- Measure event age, receive delay, reconnects, gap rate, processing time, and p50/p95/p99 by venue and symbol.
+- Add Kraken only after Coinbase adapter/replay tests pass; normalize venue-specific symbol and quantity metadata.
+- Stale, incomplete, crossed, or unhealthy data must block signal eligibility.
 
-**Exit gate:** Tests cover disconnect/reconnect and missing, duplicate, and out-of-order events. Recorded data replays deterministically. Completeness, delay, and storage volume are measured. An unhealthy feed cannot produce an eligible signal.
+**Exit gate:** deterministic historical replay; no trading signals from stale or incomplete feeds; adapter tests cover reconnects, gaps, duplicates, out-of-order events, and clock alignment.
 
-## Milestone 2 — Universe and screener
+## Milestone 2 — Causal feature and signal-processing layer
+
 **Deliverables**
-- Configurable universe based on liquidity, spread, market status, and data quality.
-- Rolling highs/lows, breakout/breakdown, relative volume, momentum, volatility, and trend features.
-- Objective triple-top/triple-bottom and swing-structure detection.
-- BTC/ETH-relative strength and broad-market context.
-- Ranked candidate snapshots with reason codes.
+- Create a single feature pipeline shared by backtest and paper modes.
+- Features: multi-window returns/momentum, EMA slope/alignment, ATR, realized volatility, range position, VWAP distance, relative volume/z-score, breakout distance, swing structure, BTC/ETH-relative strength, spread/depth, and order-book imbalance only when data quality supports it.
+- Every feature declares lookback, sampling interval, warm-up, missing-data behavior, source timestamp, and earliest knowable timestamp.
+- Preserve independent setup modules: range breakout/breakdown, rolling high/low, objective triple top/bottom, trend continuation, momentum acceleration, volatility contraction/expansion, and relative strength.
+- Signal contract includes direction, setup/version, event time, data watermark, entry limit, invalidation, stop, target, maximum hold, no-overnight expiry, estimated costs, feature snapshot, score, and reason codes.
+- Add reason-coded no-trade outcomes; flat/uncertain is a valid model decision.
 
-**Exit gate:** Unit tests cover warm-up, boundaries, missing candles, and timestamp alignment. Pattern definitions are deterministic. Output is reproducible from fixed data. Report candidate counts and liquidity distributions; make no performance claims yet.
+**Exit gate:** unit tests prove features are causal and time-aligned; each setup is independently reproducible and benchmarkable.
 
-## Milestone 3 — Signal research
+## Milestone 3 — Regime detection and directional signal ranking
+
 **Deliverables**
-- Independent strategy modules for each setup.
-- Entry, invalidation, stop, target, maximum holding time, and no-trade conditions.
-- Fees, spread, slippage, funding, and realistic execution assumptions.
-- Compare simple baselines with multi-factor ranking.
-- Evaluate long and short performance separately.
+- First implement a transparent regime classifier: trend/range state, trend strength, realized-volatility bucket, volatility expansion/contraction, liquidity/spread state, and broad-market direction.
+- Regimes are computed from data available at decision time and can return unknown; unknown or unsupported regimes suppress new entries by default.
+- Evaluate setup-specific eligibility by regime. Breakout continuation and range mean-reversion must not share an untested universal threshold.
+- Establish a simple, interpretable weighted ranker before introducing ML.
+- Add ML Strategy as a challenger model, not an immediate replacement: train long/flat/short predictions on OHLCV-derived features for 5m, 15m, and 60m forward horizons aligned to the 1–120 minute holding constraint.
+- Replace the source skill's daily-oriented default horizons and retraining assumptions with intraday, event-time-aware labels and retraining cadence.
+- Label outcomes using executable entry/exit assumptions and net returns after estimated costs; avoid labels that assume fills at candle close when that was not executable.
+- Use chronological walk-forward splits, purge overlapping labels, add an embargo at least as long as the maximum label/holding horizon, fit preprocessing only on training folds, and calibrate probabilities on separate chronological data.
+- Compare simple logistic/Ridge and Random Forest baselines before more complex models. Record model version, training window, feature schema, calibration, and prediction timestamp.
 
-**Exit gate:** No look-ahead/leakage; each signal stores feature snapshot and strategy version. Report expectancy, net return, drawdown, trade count, turnover, exposure, and cost breakdown. Do not tune against the final holdout.
+**Exit gate:** ML and regime layers beat or complement the transparent baseline on untouched chronological holdouts; no look-ahead, label overlap leakage, or preprocessing leakage. ML is not allowed to bypass risk gates.
 
-## Milestone 4 — Backtesting and validation
+## Milestone 4 — VectorBT backtesting and execution-aware validation
+
 **Deliverables**
-- Execution-aware simulator.
-- Walk-forward evaluation across multiple market regimes.
-- Untouched out-of-sample test set.
-- Sensitivity analysis for costs, slippage, latency, and parameters.
-- Benchmarks: no-trade, simple momentum, and simple breakout.
+- Integrate VectorBT as a research/backtest tool behind the repository's strategy and data contracts; do not let a skill-specific folder structure dictate production architecture.
+- Backtest long and short separately and together, with next-eligible-event execution, bid/ask-aware entry/exit, realistic maker/taker fees, spread, slippage, latency, partial fills, missed fills, order constraints, and funding where applicable.
+- Benchmark: no-trade/cash, current EMA baseline, simple momentum, simple breakout, each independent setup, regime-filtered strategy, ML-only, and combined ensemble.
+- Use chronological train/validation/test partitions, rolling walk-forward evaluation, a final untouched holdout, and regime/instrument/side/holding-time breakdowns.
+- Add realistic-cost stress tiers, entry-delay tests, slippage shocks, parameter-neighborhood sensitivity, trade-order Monte Carlo/bootstrap, and ablation tests.
+- Track experiment registry: hypothesis, data snapshot, code/config/model version, parameter search space, trial count, metrics, and promotion decision.
+- Correctly account for multiple testing and selection bias; never choose a strategy solely by its best in-sample parameter set.
 
-**Exit gate:** Signals use only information available at decision time. Results are robust enough across adjacent parameters and periods to warrant paper testing. Report gross/net performance, drawdown, tail losses, uncertainty, and cost breakdown. Reject edges that disappear under plausible costs.
+**Required report:** trade count; net expectancy per trade and in risk units; gross/net PnL; fees/spread/slippage/funding; profit factor; Sharpe/Sortino; max drawdown and time under water; tail losses; exposure; turnover; holding-time distribution; long/short split; regime split; uncertainty estimates; and comparison with baselines.
 
-## Milestone 5 — Live-data paper trading
+**Exit gate:** positive and robust net expectancy on unseen data, credible sample size, plausible cost/delay stress tolerance, and no material performance collapse across adjacent parameter values. If not, retain research-only status.
+
+## Milestone 5 — Parameter optimization without overfitting
+
 **Deliverables**
-- Run screener/strategies on live feeds without sending exchange orders.
-- Simulate latency, fills, partial fills, spread crossing, fees, and missed fills.
-- Compare simulated fills with contemporaneous market conditions.
-- Produce daily strategy and system-health reports.
+- Use the Optimize skill/VectorBT parameter sweeps only inside training windows.
+- Optimize a small, predeclared parameter set; avoid searching dozens of loosely justified indicators and thresholds.
+- Rank parameter regions by out-of-fold stability, net expectancy, drawdown, turnover, and cost sensitivity—not by peak in-sample return.
+- Prefer broad stable plateaus over a narrow optimum.
+- Re-run selected parameters through a fresh walk-forward evaluation and untouched final holdout.
+- Freeze parameters/model versions during paper evaluation; changes restart the evaluation window.
 
-**Exit gate:** Predeclared observation period and sample size met. No unexplained simulated position drift. Feed failures and risk limits reliably block trades. Paper results are consistent with backtest assumptions within documented tolerances.
+**Exit gate:** selected settings remain robust on data not used in selection and are not materially worse under plausible fee, spread, slippage, and delay shocks.
 
-## Milestone 6 — Risk engine and execution integration
+## Milestone 6 — Deterministic risk engine and portfolio controls
+
 **Deliverables**
-- Portfolio limits, per-trade risk, exposure/correlation caps, daily loss stop, and kill switch.
-- Integrate one approved venue using test environment or minimal-risk configuration.
-- Idempotent order IDs, reconciliation, partial-fill handling, and safe timeout recovery.
-- Manual disable control and auditable operator actions.
+- Extend the current RiskManager; do not delegate order approval to an LLM or ML model.
+- Validate stop direction/distance, target/stop consistency, minimum notional/lot/tick rules, and maximum acceptable entry price.
+- Size from risk budget divided by stop distance, then cap by notional, liquidity/market impact, per-asset exposure, and portfolio exposure.
+- Add aggregate open risk, concurrent position, correlated exposure, maximum turnover, daily loss, rolling drawdown, consecutive-loss cooldown, per-symbol/per-venue disable, and global kill-switch controls.
+- Add regime/data-quality gates, spread and estimated-slippage ceilings, stale quote checks, venue-health checks, and no-new-entry windows near the no-overnight cutoff.
+- Risk analytics skill supplies VaR/CVaR, Monte Carlo, historical/hypothetical stress scenarios, and tail diagnostics for offline risk review. These analytics inform limits but do not replace hard real-time gates.
+- Use conservative configurable limits; do not copy generic example percentages from external skills as production settings.
+- Use decimal-safe arithmetic for price, quantity, and money; fail closed on missing balances, unknown positions, stale data, or invalid metadata.
+- Persist every allow/reject decision with machine-readable reason codes.
 
-**Exit gate:** Failure-injection tests cover disconnects, rate limits, rejects, partial fills, ambiguous timeouts, and restarts. No duplicate orders after recovery. Risk fails closed on stale data, missing balances, and inconsistent positions. Live mode remains disabled unless explicitly enabled.
+**Exit gate:** unit, property, and failure-injection tests prove every limit blocks correctly; portfolio risk is computed across correlated positions; all unsafe/unknown states fail closed.
 
-## Milestone 7 — Limited live pilot
+## Milestone 7 — Live-data paper trading and shadow evaluation
+
 **Deliverables**
-- Enable only after prior gates pass and the operator explicitly authorizes live use.
-- Start with minimal notional and strict loss/exposure limits.
-- Compare actual fills/costs/slippage with paper assumptions.
-- Review every trade and incident.
+- Run the frozen strategy on live feeds without exchange order submission.
+- Simulate order arrival delay, bid/ask fills, partial fills, rejects, cancel/replace, missed fills, fees, spread, slippage, and funding.
+- Compare simulated fills to contemporaneous quotes/order book; log signal-to-decision and decision-to-fill latency.
+- Produce daily and weekly reports by strategy, model version, symbol, side, regime, and holding-time bucket.
+- Run risk-analysis stress reports on realized paper returns and hypothetical liquidity/volatility shocks.
+- Require a predeclared minimum observation window and sample size; do not promote based on a short profitable streak.
 
-**Exit gate:** Execution quality within predeclared tolerances; no unresolved critical safety/reconciliation defects; net performance reviewed after all costs.
+**Exit gate:** paper results are consistent with backtest assumptions within documented tolerances; no unexplained position/PnL drift; risk gates and feed failure blocks work reliably.
 
-## Milestone 8 — Optimization and expansion
+## Milestone 8 — Execution readiness review (still disabled by default)
+
 **Deliverables**
-- Add venues only after the first is reliable.
-- Expand instruments based on liquidity and data quality.
-- Improve ranking, regime detection, and portfolio allocation.
-- Test features through controlled experiments and ablation.
-- Automate monitoring and research reports.
+- Design a separate venue execution gateway with idempotent client order IDs, precision/minimum validation, partial-fill handling, safe timeout reconciliation, cancel/replace, and position/balance reconciliation.
+- Add testnet or exchange sandbox tests where supported; failure-injection tests for disconnects, rate limits, rejects, ambiguous timeouts, restarts, and duplicate messages.
+- Require explicit operator approval, a manual kill switch, minimal initial notional, and strict configured exposure/loss limits.
+- Keep live mode disabled in code/config until a separate authorization decision.
 
-**Exit gate:** Each addition improves out-of-sample results or operational quality. Changes are versioned against a stable baseline. No model or parameter update is promoted live without validation.
+**Exit gate:** no unresolved critical execution/reconciliation defect; all risk and operational checks pass; explicit user approval is obtained. This roadmap does not itself authorize live trading.
+
+## Milestone 9 — Controlled improvement loop
+
+**Deliverables**
+- Run scheduled research jobs to refresh data, calculate features, evaluate regime drift, retrain candidate models, and compare challengers against the frozen champion.
+- Promote a challenger only after the full validation protocol and a new paper observation period.
+- Monitor feature drift, prediction calibration, regime distribution, net expectancy, cost drift, drawdown, and operational reliability.
+- Roll back automatically to the last approved version or disable a strategy when predeclared health/performance limits fail.
+- Expand symbols/venues only when data quality, liquidity, and out-of-sample evidence justify it.
+
+**Exit gate:** every change is versioned, reproducible, compared against a stable baseline, and independently approved before any live promotion.
 
 ## Priority order
 
-| Priority | Workstream | Rationale |
+| Priority | Workstream | Main skill contribution |
 |---|---|---|
-| P0 | Requirements, schemas, secrets, tests | Prevents rework and unsafe defaults |
-| P0 | One reliable market-data adapter | All downstream work depends on correct data |
-| P1 | Historical storage and replay | Reproducible research |
-| P1 | Features and candidate screener | Converts data into testable setups |
-| P1 | Independent signal modules | Fair strategy comparison |
-| P1 | Backtesting and cost model | Filters false edges before capital exposure |
-| P2 | Live-data paper trading | Tests operational reality |
-| P2 | Risk and execution integration | Controlled, auditable orders |
-| P3 | Limited live pilot | Only after evidence and explicit approval |
-| P3 | Multi-venue scale and optimization | Avoids premature complexity |
+| P0 | Baseline, data contracts, deterministic replay | Algorithmic Trading |
+| P0 | Causal feature pipeline and bar aggregation | ML Strategy + Algorithmic Trading |
+| P1 | Regime classifier and signal ranking | ML Strategy |
+| P1 | Execution-aware backtest and reporting | VectorBT Expert |
+| P1 | Walk-forward, stress, and robustness testing | VectorBT Expert + Risk Analysis |
+| P1 | Parameter search and stability selection | Optimize |
+| P1 | Deterministic portfolio risk gates | Risk Analysis + Algorithmic Trading |
+| P2 | Live-feed paper trading and drift monitoring | All five |
+| P3 | Execution readiness and limited pilot review | Algorithmic Trading |
 
-## Required performance report
+## Non-negotiable promotion criteria
 
-For every strategy and evaluation period, report trade count, win rate, average win/loss, expectancy per trade and in risk units, gross PnL, fees, spread, slippage, funding, net PnL, profit factor, maximum drawdown, time under water, exposure, turnover, holding-time distribution, missed signals, and results by direction, instrument, volatility regime, and market trend. Include uncertainty estimates when sample size permits.
-
-Do not select a strategy by win rate alone. High win rate can still lose money when losses and costs are large.
-
-## Immediate engineering tasks
-
-1. Add Python project scaffolding, dependency locks, linting, and CI.
-2. Define domain models and configuration schema.
-3. Select the first exchange and a small liquid test universe.
-4. Implement and test the first WebSocket/REST adapter.
-5. Capture a reproducible dataset and build the first screener baseline.
+A strategy/model cannot advance because its in-sample return is high, its win rate looks good, or an agent says it is confident. Promotion requires reproducible out-of-sample net edge, robustness to realistic costs and delay, stable behavior across relevant regimes, acceptable drawdown/tail risk, complete auditability, passing operational tests, and explicit approval for any live mode.
