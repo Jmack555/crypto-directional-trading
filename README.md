@@ -1,34 +1,47 @@
 # Crypto Directional Trading
 
-Research, screen, validate, and execute short-horizon directional cryptocurrency trades. Initial target holding period: 1–2 hours, with no overnight exposure.
+A research-to-paper-trading system for short-horizon directional crypto strategies. Initial target holding period: 1–120 minutes; no overnight exposure.
 
-**Scope:** directional long/short strategies only. Arbitrage, MEV, sandwiching, and cross-DEX execution are explicitly excluded.
+**Scope:** directional long/short signals only. Arbitrage, MEV, sandwiching, and cross-DEX execution are excluded.
 
-## Start here
-- [System architecture](docs/ARCHITECTURE.md)
+## Current implementation
+
+- Coinbase Exchange public WebSocket market-data adapter (no API key required for public feeds).
+- Local event-time 1-minute bar builder and EMA momentum baseline.
+- Conservative paper portfolio with spread/fee/slippage assumptions and hard risk gates.
+- Feed freshness checks, reconnect backoff, structured logs, and a global stop flag.
+- No live order-entry implementation. `TRADING_MODE=paper` is the only supported mode; real-money execution is intentionally unavailable until separately designed, tested, and explicitly approved.
+
+## Quick start
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+cp .env.example .env
+python -m crypto_directional.main
+```
+
+The bot subscribes to the configured Coinbase USD spot products and prints paper signals/trades. It does not need exchange credentials. Start with the small default universe; do not increase subscriptions until feed health and resource use are measured.
+
+## Configuration
+
+Environment variables override defaults. See `.env.example` and `config/default.env`. Never commit real credentials. Public market-data mode requires no keys.
+
+## Development
+
+```bash
+pytest
+ruff check .
+```
+
+## Design documents
+
+- [Architecture](docs/ARCHITECTURE.md)
 - [Implementation roadmap](docs/ROADMAP.md)
 - [Strategy research specification](docs/STRATEGY_SPEC.md)
+- [Feed and execution benchmark plan](docs/FEED_AND_EXECUTION.md)
 
-## System workflow
-Market data → validation and storage → features → candidate screener → signal ranking → portfolio risk checks → paper/live execution → monitoring and analytics.
+## Operating principle
 
-## Project status
-Architecture and roadmap are documented. This repository is not yet a live trading bot. Real-money execution remains disabled until the data, backtesting, paper-trading, and risk-control gates are passed.
-
-## Principles
-1. Measure net performance after fees, spread, slippage, and funding.
-2. Never use future information in features, signals, or backtests.
-3. Treat missing, stale, or inconsistent market data as a reason not to trade.
-4. Keep signal generation separate from portfolio risk and order execution.
-5. Record every input, signal, decision, order, fill, and error.
-6. Start with research and paper mode; live execution requires explicit operator approval.
-
-## Initial assumptions
-- Holding-period target: 1–2 hours; no intentional overnight positions.
-- Initial universe: liquid markets on explicitly supported exchanges.
-- 1m/5m data for entry context; 15m/1h/4h for setup and trend context.
-- Long and short signals are evaluated independently; shorting is enabled only where the venue and instrument support it.
-- These are research defaults, not claims of profitability.
-
-## Security
-Never commit API keys, exchange secrets, private account data, or production environment files. Use environment variables and a local untracked .env file. Start with read-only market-data access where possible.
+Optimize for repeatable **net** expectancy after fees, spread, slippage, funding (where applicable), and missed/partial fills—not trade count, indicator count, or win rate. A signal score is not a calibrated probability. Backtests must use point-in-time data and chronological out-of-sample evaluation. Paper performance is not proof of live profitability.
