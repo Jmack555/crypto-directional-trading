@@ -6,9 +6,9 @@ A research-to-paper-trading system for short-horizon directional crypto strategi
 
 ## Current implementation
 
-- Coinbase Exchange public WebSocket market-data adapter (no API key required for public feeds).
-- Local event-time 1-minute bar builder and EMA momentum baseline.
-- Conservative paper portfolio with spread/fee/slippage assumptions and hard risk gates.
+- Coinbase Exchange public WebSocket ticker/heartbeat adapter (no API key required for public feeds).
+- Experimental tick-sampled EMA momentum baseline; it is not yet a validated candle-based strategy.
+- Conservative paper portfolio with configurable fee, spread, slippage, and hard risk gates.
 - Feed freshness checks, reconnect backoff, structured logs, and a global stop flag.
 - No live order-entry implementation. `TRADING_MODE=paper` is the only supported mode; real-money execution is intentionally unavailable until separately designed, tested, and explicitly approved.
 
@@ -26,7 +26,7 @@ The bot subscribes to the configured Coinbase USD spot products and prints paper
 
 ## Configuration
 
-Environment variables override defaults. See `.env.example` and `config/default.env`. Never commit real credentials. Public market-data mode requires no keys.
+Environment variables override defaults. A local `.env` file is loaded automatically. Never commit real credentials. Public market-data mode requires no keys.
 
 ## Development
 

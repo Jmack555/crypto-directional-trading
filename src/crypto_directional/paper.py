@@ -22,11 +22,13 @@ class Position:
 
 
 class PaperBroker:
-    def __init__(self, equity: float, risk: RiskManager, fee_bps: float, slippage_bps: float):
+    def __init__(self, equity: float, risk: RiskManager, fee_bps: float,
+                 slippage_bps: float, max_hold_minutes: int = 120):
         self.cash = equity
         self.risk = risk
         self.fee_bps = fee_bps
         self.slippage_bps = slippage_bps
+        self.max_hold_minutes = max_hold_minutes
         self.positions: dict[str, Position] = {}
 
     def on_signal(self, signal: Signal, spread_bps: float, feed_age_ms: float,
@@ -53,7 +55,7 @@ class PaperBroker:
         age_min = (now - position.opened_at).total_seconds() / 60
         hit_stop = price <= position.stop if position.side == "long" else price >= position.stop
         hit_target = price >= position.target if position.side == "long" else price <= position.target
-        if hit_stop or hit_target or age_min >= 120:
+        if hit_stop or hit_target or age_min >= self.max_hold_minutes:
             direction = 1 if position.side == "long" else -1
             exit_price = price * (1 - direction * self.slippage_bps / 10_000)
             gross = (exit_price - position.entry) * position.quantity * direction

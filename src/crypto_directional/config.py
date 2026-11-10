@@ -3,6 +3,11 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
+# Load a local .env file when present; real secrets must never be committed.
+load_dotenv()
+
 
 def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
@@ -40,3 +45,5 @@ class Settings:
             raise ValueError("RISK_PER_TRADE_PCT must be in (0, 0.01]")
         if not 0 < self.max_daily_loss_pct <= 0.05:
             raise ValueError("MAX_DAILY_LOSS_PCT must be in (0, 0.05]")
+        if not 1 <= self.max_hold_minutes <= 120:
+            raise ValueError("MAX_HOLD_MINUTES must be between 1 and 120")

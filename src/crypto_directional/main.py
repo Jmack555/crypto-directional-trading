@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from crypto_directional.config import Settings
 from crypto_directional.market_data.coinbase import CoinbaseFeed
@@ -17,7 +18,7 @@ def configure_logging(level: str) -> None:
 
 async def run() -> None:
     settings = Settings()
-    configure_logging(__import__("os").getenv("LOG_LEVEL", "INFO"))
+    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     log = logging.getLogger("bot")
     if settings.kill_switch:
         log.error("GLOBAL_KILL_SWITCH is enabled; refusing to start")
@@ -25,7 +26,8 @@ async def run() -> None:
     risk = RiskManager(settings.initial_equity, settings.risk_per_trade_pct,
                        settings.max_open_positions, settings.max_daily_loss_pct,
                        settings.max_spread_bps)
-    broker = PaperBroker(settings.initial_equity, risk, settings.taker_fee_bps, settings.slippage_bps)
+    broker = PaperBroker(settings.initial_equity, risk, settings.taker_fee_bps,
+                         settings.slippage_bps, settings.max_hold_minutes)
     strategy = MomentumStrategy()
     feed = CoinbaseFeed(settings.ws_url, settings.products)
     log.warning("PAPER MODE ONLY: no exchange orders can be submitted")
