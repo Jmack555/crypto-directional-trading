@@ -147,7 +147,7 @@ def run_backtest(candles: Iterable[Candle], config: BacktestConfig = BacktestCon
     fees_total = 0.0
     trades: list[Trade] = []
     position: dict[str, float | int | datetime] | None = None
-    cost_rate = (config.fee_bps_per_side + config.slippage_bps_per_side + config.spread_bps / 2) / 10_000
+    price_cost_rate = (config.slippage_bps_per_side + config.spread_bps / 2) / 10_000
 
     # Last candle cannot produce an entry because there is no next-open fill.
     for i in range(1, len(data)):
@@ -171,7 +171,7 @@ def run_backtest(candles: Iterable[Candle], config: BacktestConfig = BacktestCon
             elif held >= config.max_hold_bars:
                 exit_px, reason = bar.close, "time"
             if exit_px is not None:
-                execution_exit = exit_px * (1.0 - cost_rate)
+                execution_exit = exit_px * (1.0 - price_cost_rate)
                 gross = (exit_px - entry) * qty
                 entry_fee = float(position["entry_notional"]) * config.fee_bps_per_side / 10_000
                 exit_fee = exit_px * qty * config.fee_bps_per_side / 10_000
@@ -186,13 +186,13 @@ def run_backtest(candles: Iterable[Candle], config: BacktestConfig = BacktestCon
                 peak = max(peak, equity)
                 max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else 0.0)
 
-        if position is None and i < len(data) - 1:
+        if position is None and i < len(data) - 1 and i >= 2:
             # Cross above slow EMA; all inputs are from completed candle i-1.
             signal_i = i - 1
             crossed_up = fast[signal_i] > slow[signal_i] and fast[signal_i - 1] <= slow[signal_i - 1]
             if crossed_up and atr[signal_i] > 0:
                 raw_entry = bar.open
-                entry = raw_entry * (1.0 + cost_rate)
+                entry = raw_entry * (1.0 + price_cost_rate)
                 stop_distance = config.stop_atr * atr[signal_i]
                 risk_budget = equity * config.risk_per_trade_pct
                 qty_by_risk = risk_budget / stop_distance
@@ -212,7 +212,7 @@ def run_backtest(candles: Iterable[Candle], config: BacktestConfig = BacktestCon
         exit_px = bar.close
         qty = float(position["qty"])
         entry = float(position["entry"])
-        execution_exit = exit_px * (1.0 - cost_rate)
+        execution_exit = exit_px * (1.0 - price_cost_rate)
         entry_fee = float(position["entry_notional"]) * config.fee_bps_per_side / 10_000
         exit_fee = exit_px * qty * config.fee_bps_per_side / 10_000
         gross = (exit_px - entry) * qty
