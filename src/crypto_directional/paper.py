@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from crypto_directional.risk import RiskManager
 from crypto_directional.strategy.momentum import Signal
@@ -43,7 +43,7 @@ class PaperBroker:
         self.cash -= fee
         self.positions[signal.product_id] = Position(
             signal.product_id, signal.side, decision.quantity, fill,
-            signal.stop_price, signal.target_price, datetime.now(timezone.utc),
+            signal.stop_price, signal.target_price, datetime.now(UTC),
         )
         log.info("paper position opened", extra={"product": signal.product_id, "side": signal.side,
                  "quantity": decision.quantity, "entry": fill, "fee": fee, "score": signal.score})
