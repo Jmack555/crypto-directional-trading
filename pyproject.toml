@@ -22,3 +22,6 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Keep CI linting explicit and stable across Ruff releases.
+[tool.ruff.lint]
+select = ["E", "F", "I"]
