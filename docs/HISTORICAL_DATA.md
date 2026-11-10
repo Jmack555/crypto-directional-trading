@@ -1,8 +1,16 @@
 # Historical market data
 
-The initial collector uses Coinbase Exchange's unauthenticated public candle endpoint (`/products/{product_id}/candles`). It requests bounded windows of at most 300 bars, supports 1m/5m/15m/1h/6h/1d bars, retries transient transport errors, normalizes timestamps to UTC, sorts and deduplicates candles, and writes the exact CSV format accepted by the backtester.
+The collector uses Coinbase Exchange's unauthenticated public candle endpoint (`/products/{product_id}/candles`). It requests bounded windows of at most 300 bars, supports 1m/5m/15m/1h/6h/1d bars, retries transient transport errors, normalizes timestamps to UTC, sorts and deduplicates candles, and writes the exact CSV format accepted by the backtester.
 
-Example from the repository root after installing the package:
+Download from the repository root after installing the package:
+
+```bash
+python -m crypto_directional.market_data BTC-USD \
+  --start 2025-01-01T00:00:00Z --end 2025-02-01T00:00:00Z \
+  --granularity 60 --output data/raw/BTC-USD-1m.csv
+```
+
+The same operation is available as a Python function:
 
 ```python
 from datetime import UTC, datetime
