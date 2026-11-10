@@ -41,6 +41,7 @@ contract MockRouter is ISwapRouter02 {
     function exactInputSingle(ExactInputSingleParams calldata p) external returns (uint256) {
         uint256 output = p.amountIn * 2;
         require(output >= p.amountOutMinimum, "min out");
+        require(MockERC20(p.tokenIn).transferFrom(msg.sender, address(this), p.amountIn), "pull input");
         require(MockERC20(outputToken).transfer(p.recipient, output), "transfer");
         return output;
     }
