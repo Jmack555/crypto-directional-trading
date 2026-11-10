@@ -5,9 +5,9 @@ import json
 import logging
 import random
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime
-from typing import AsyncIterator
+from datetime import datetime, timezone
 
 import websockets
 
@@ -58,14 +58,14 @@ class CoinbaseFeed:
                     delay = 0.5
                     async for raw in ws:
                         received_mono = time.monotonic()
-                        received_at = datetime.utcnow()
+                        received_at = datetime.now(timezone.utc)
                         try:
                             msg = json.loads(raw)
                             if msg.get("type") != "ticker":
                                 continue
                             product = msg.get("product_id")
                             price, bid, ask = (float(msg[k]) for k in ("price", "best_bid", "best_ask"))
-                            exchange_time = datetime.fromisoformat(msg["time"].replace("Z", "+00:00")).replace(tzinfo=None)
+                            exchange_time = datetime.fromisoformat(msg["time"].replace("Z", "+00:00"))
                             if product not in self.products or min(price, bid, ask) <= 0 or bid > ask:
                                 continue
                             yield Ticker(product, price, bid, ask, exchange_time, received_mono, received_at)
