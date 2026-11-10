@@ -15,6 +15,9 @@ class Signal:
     target_price: float
     score: float
     reason: str
+    # Separate from the legacy EMA score: this must be produced by the
+    # multi-factor quality evaluator. None means the trade is not eligible.
+    quality_score: float | None = None
 
 
 class MomentumStrategy:
@@ -55,4 +58,9 @@ class MomentumStrategy:
         stop = entry - risk if direction == "long" else entry + risk
         target = entry + 1.5 * risk if direction == "long" else entry - 1.5 * risk
         score = min(1.0, abs(momentum) * 1000 + abs(fast / slow - 1) * 100)
-        return Signal(tick.product_id, direction, entry, stop, target, score, "EMA alignment + short momentum")
+        # The tick-only prototype has no closed-bar regime, volume, relative
+        # strength, or cost-adjusted liquidity evidence. Do not fabricate a score.
+        return Signal(
+            tick.product_id, direction, entry, stop, target, score,
+            "EMA alignment + short momentum; awaiting full quality evidence",
+        )
